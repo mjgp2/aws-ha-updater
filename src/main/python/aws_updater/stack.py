@@ -60,8 +60,11 @@ class StackUpdater(object):
         return get_all_autoscaling_groups(self.as_conn, stack)
 
     @timed
-    def update_asgs(self):
+    def update_asgs(self, specific_asg=None):
         for asg in self.get_all_asgs_from_stack():
+            if specific_asg is not None and asg.name != specific_asg :
+                self.logger.info("_NOT_ updating ASG '{0}' != '{1}'".format(asg.name, specific_asg))
+                continue
             self.logger.info("Updating ASG '{0}'.".format(asg.name))
             ASGUpdater(asg,
                        self.as_conn,

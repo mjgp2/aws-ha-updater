@@ -1,10 +1,11 @@
-#!/usr/bin/python2.6
+#!env python
 """
 Usage:
     update-asgs STACK_NAME [options]
 
 Options:
     --region=TEXT   aws region [default: eu-west-1]
+    --asg=TEXT      ASG to update (optional)
 """
 
 import logging
@@ -19,12 +20,13 @@ arguments = docopt(__doc__)
 
 stack_name = arguments["STACK_NAME"]
 region = arguments["--region"]
+asg = arguments["--asg"]
 
 print "update-asgs: update the asgs of a stack in a high-available manner"
 print "=================================================================="
 
 try:
-    StackUpdater(stack_name, region).update_asgs()
+    StackUpdater(stack_name, region).update_asgs(asg)
 except Exception as e:
     print "[Error] Problem while updating stack {0}: {1}".format(stack_name, e)
     raise

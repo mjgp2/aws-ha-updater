@@ -1,4 +1,4 @@
-#!/usr/bin/python2.6
+#!env python
 """
 usage: check-stack STACK_NAME [--show-events]
 """
