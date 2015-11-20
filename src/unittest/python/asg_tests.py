@@ -38,6 +38,8 @@ class ASGUpdaterTests(TestCase):
                               Mock(instance_id="resource_id_of_instance_with_old_lc", launch_config_name="any-old-lc"),
                               Mock(instance_id="3", launch_config_name="any-lc")]
 
+        self.asg_updater.old_instances = ["resource_id_of_instance_with_old_lc"]
+
         with patch("aws_updater.asg.ASGUpdater._terminate_instances") as terminate_instances:
             self.asg_updater.commit_update()
             terminate_instances.assert_called_with(["resource_id_of_instance_with_old_lc"])
@@ -47,6 +49,7 @@ class ASGUpdaterTests(TestCase):
                               Mock(instance_id="2", launch_config_name="any-old-lc"),
                               Mock(instance_id="resource_id_of_instance_with_new_lc-2", launch_config_name="any-lc")]
 
+        self.asg_updater.old_instances = ["2"]
         with patch("aws_updater.asg.ASGUpdater._terminate_instances") as terminate_instances:
             self.asg_updater.rollback()
             terminate_instances.assert_called_with(['resource_id_of_instance_with_new_lc-1', 'resource_id_of_instance_with_new_lc-2'])
@@ -97,30 +100,31 @@ class ASGUpdaterTests(TestCase):
     @patch("aws_updater.asg.ASGUpdater.get_instances_views")
     def test_should_get_nr_of_uptodate_instances(self, views):
         self.asg.launch_config_name = "current-lc"
-        views.return_value = {
+        views_value = {
             u'i-46cd9105': {
-                'asg': Mock(launch_config_name="current-lc"),
+                'asg': Mock(instance_id="i-46cd9105", launch_config_name="current-lc"),
                 'elb': Mock(state="InService")},
             # Does not qualify, out of service
             u'i-46cd9109': {
-                'asg': Mock(launch_config_name="current-lc"),
+                'asg': Mock(instance_id="i-46cd9109", launch_config_name="current-lc"),
                 'elb': Mock(state="OutOfService")},
             # Does not qualify, no elb
             u'i-46cd9108': {
-                'asg': Mock(launch_config_name="current-lc")},
+                'asg': Mock(instance_id="i-46cd9108", launch_config_name="current-lc")},
             # Does not qualify, other launch config and out of service
             u'i-46cd9107': {
-                'asg': Mock(launch_config_name="other-lc"),
+                'asg': Mock(instance_id="i-46cd9107", launch_config_name="other-lc"),
                 'elb': Mock(state="OutOfService")},
             # Does not qualify, other launch config
             u'i-46cd9145': {
-                'asg': Mock(launch_config_name="other-lc"),
+                'asg': Mock(instance_id="i-46cd9145", launch_config_name="other-lc"),
                 'elb': Mock(state="InService")},
             u'i-46cd9142': {
-                'asg': Mock(launch_config_name="current-lc"),
+                'asg': Mock(instance_id="i-46cd9142", launch_config_name="current-lc"),
                 'elb': Mock(state="InService")},
         }
-
+        views.return_value = views_value
+        self.asg_updater.old_instances = ["i-46cd9107","i-46cd9145"]
         self.assertEqual(self.asg_updater.get_nr_of_uptodate_instances(), 2)
 
     def test_should_commit_after_update(self):
@@ -158,22 +162,24 @@ class ASGUpdaterTests(TestCase):
         two_uptodate_after_two_tries = [
             {  # returned on first call of get_instances_views
                 u'i-46cd9105': {
-                    'asg': Mock(launch_config_name="current-lc"),
+                    'asg': Mock(instance_id="1", launch_config_name="current-lc"),
                     'elb': Mock(state="InService")},
                 u'i-46cd9109': {
-                    'asg': Mock(launch_config_name="current-lc"),
+                    'asg': Mock(instance_id="i-46cd9109", launch_config_name="current-lc"),
                     'elb': Mock(state="OutOfService")},
             },
             {  # returned on second call
                 u'i-46cd9105': {
-                    'asg': Mock(launch_config_name="current-lc"),
+                    'asg': Mock(instance_id="i-46cd9105", launch_config_name="current-lc"),
                     'elb': Mock(state="InService")},
                 u'i-46cd9109': {
-                    'asg': Mock(launch_config_name="current-lc"),
+                    'asg': Mock(instance_id="i-46cd9109", launch_config_name="current-lc"),
                     'elb': Mock(state="InService")},
             }]
 
         views.side_effect = two_uptodate_after_two_tries
+
+        self.asg_updater.old_instances = []
 
         self.asg_updater.wait_for_scale_out_complete()
 
@@ -189,11 +195,12 @@ class ASGUpdaterTests(TestCase):
         time.side_effect = [0, 1200, 9000]
         views.return_value = {
             u'i-46cd9105': {
-                'asg': Mock(launch_config_name="current-lc"),
+                'asg': Mock(instance_id="i-46cd9105", launch_config_name="current-lc"),
                 'elb': Mock(state="OutOfService")},
             u'i-46cd9109': {
-                'asg': Mock(launch_config_name="other-lc"),
+                'asg': Mock(instance_id="i-46cd9109", launch_config_name="other-lc"),
                 'elb': Mock(state="InService")},
         }
 
+        self.asg_updater.old_instances = ["i-46cd9105"]
         self.assertRaises(TimeoutException, self.asg_updater.wait_for_scale_out_complete)

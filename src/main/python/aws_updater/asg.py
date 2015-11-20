@@ -27,24 +27,24 @@ class ASGUpdater(object):
         self.original_min_size = None
         self.original_max_size = None
         self.timeout_in_seconds = timeout_in_seconds or 600
+        self.old_instances = None
 
         dummy_observer_callback = lambda event: None
         self.observer_callback = observer_callback or dummy_observer_callback
 
     def update(self):
-        if self.needs_update():
-            try:
-                self.scale_out()
-                self.wait_for_scale_out_complete()
-                self.commit_update()
-            except Exception as e:
-                print("Problem while updating ASG {0} : {1}.\nRolling back now.".format(self.asg.name, e))
-                self.rollback()
-                raise RolledBackException("Rolled back because of {0}".format(e))
-            except KeyboardInterrupt:
-                print("Interrupted by user, rolling back now.")
-                self.rollback()
-                raise
+        try:
+            self.scale_out()
+            self.wait_for_scale_out_complete()
+            self.commit_update()
+        except Exception as e:
+            print("Problem while updating ASG {0} : {1}.\nRolling back now.".format(self.asg.name, e))
+            self.rollback()
+            raise RolledBackException("Rolled back because of {0}".format(e))
+        except KeyboardInterrupt:
+            print("Interrupted by user, rolling back now.")
+            self.rollback()
+            raise
 
     def wait_for_scale_out_complete(self, needed_nr_of_uptodate_instances=None):
         if not needed_nr_of_uptodate_instances:
@@ -94,15 +94,12 @@ class ASGUpdater(object):
             instances = self.get_instances_views()
         nr_of_uptodate_instances = 0
         for id, views in instances.iteritems():
-            if getattr(views.get("asg", {}), "launch_config_name", None) == self.asg.launch_config_name:
+            if id not in self.old_instances:
                 if getattr(views.get("elb", {}), "state", None) == "InService":  # TODO use constant here
                     nr_of_uptodate_instances += 1
         print()
 
         return nr_of_uptodate_instances
-
-    def needs_update(self):
-        return self.get_nr_of_uptodate_instances() < self.count_running_instances()
 
     def count_running_instances(self):
         count = 0
@@ -112,6 +109,9 @@ class ASGUpdater(object):
         return count
 
     def scale_out(self):
+
+        self.old_instances = [instance.instance_id for instance in self.asg.instances]
+
         asg_processes_to_keep = ['Launch', 'Terminate', 'HealthCheck', 'AddToLoadBalancer']
         self.asg.suspend_processes()
         self.asg.resume_processes(asg_processes_to_keep)
@@ -136,14 +136,12 @@ class ASGUpdater(object):
 
     def commit_update(self):
         """
-        * Removes instances from ASG which do not belong to the *new* launch configuration
+        * Removes original instances from ASG
         * Restores the old ASG parameters
         * Resumes all ASG processes
         """
-        instances_with_old_launch_config = [instance.instance_id for instance in self.asg.instances
-                                            if instance and instance.launch_config_name != self.asg.launch_config_name]
-
-        self._terminate_instances(instances_with_old_launch_config)
+        
+        self._terminate_instances(self.old_instances)
         self._restore_original_asg_size()
 
         self.asg.resume_processes()
@@ -155,10 +153,10 @@ class ASGUpdater(object):
         * Restores the old ASG parameters
         * Marks the ASG as degraded
         """
-        instances_with_new_launch_config = [instance.instance_id for instance in self.asg.instances
-                                            if instance and instance.launch_config_name == self.asg.launch_config_name]
+        new_instances = [instance.instance_id for instance in self.asg.instances
+                                            if instance and instance.instance_id not in self.old_instances]
 
-        self._terminate_instances(instances_with_new_launch_config)
+        self._terminate_instances(new_instances)
         self._restore_original_asg_size()
 
     def _restore_original_asg_size(self):
