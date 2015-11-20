@@ -25,6 +25,11 @@ asg = arguments["--asg"]
 print "update-asgs: update the asgs of a stack in a high-available manner"
 print "=================================================================="
 
+if asg is None:
+	msg = 'Shall I really update ALL the ASGs?'
+	if raw_input("%s (y/N) " % msg).lower() != 'y':
+		exit(1)
+
 try:
     StackUpdater(stack_name, region).update_asgs(asg)
 except Exception as e:
